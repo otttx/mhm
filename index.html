@@ -238,6 +238,10 @@ body[data-area=admin] .staff,body[data-area=print] .staff{display:none}
 .pbar{max-width:210mm;width:100%;margin:1.2rem auto 0;padding:0 1rem;display:flex;flex-wrap:wrap;align-items:center;gap:.6rem 1rem}
 .pbar .chk{font-weight:400;font-size:15px;margin:0}
 .pbar .tip{flex-basis:100%;font-size:13px;color:var(--muted);margin:0}
+.pscope{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:.3rem 1.2rem;margin:0;padding:.55rem .9rem;border:1px solid var(--rule);border-radius:6px;background:var(--paper)}
+.pscope legend{float:inline-start;padding:0;margin-inline-end:.4rem;font-weight:800;font-size:14.5px}
+.pscope .chk{font-weight:400;font-size:15px;margin:0}
+.adm .pbar{padding:0}
 .pf{max-width:210mm;width:calc(100% - 2rem);margin:1rem auto 2.5rem;background:var(--paper);border:1px solid var(--rule);padding:16mm 15mm 14mm}
 .pf-head{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:1.1rem;padding-bottom:1rem;border-bottom:3px double #8797A6}
 .pf-head img{height:62px;width:auto}
@@ -292,6 +296,7 @@ body[data-area=admin] .staff,body[data-area=print] .staff{display:none}
   .vw .doc{position:static;max-height:none;overflow:visible;break-before:page;border:0;padding:0}
   .staff,.pbar{display:none!important}
   body[data-area=print] main{padding:0}
+  .adm{padding:0;max-width:none}
   .pf{max-width:none;width:auto;margin:0;border:0;padding:0}
   .pf-sec+.pf-sec{margin-top:0;break-before:page}
   .pf-doc{break-before:page;margin-top:0}
@@ -737,7 +742,75 @@ async function renderDashboard() {
   }
 }
 
-// ---------------- ملف الواجبين للطباعة أو الحفظ PDF (الطالب يرى ملفه هو فقط) ----------------
+// ---------------- ملف الواجبات للطباعة أو الحفظ PDF (للطالب ولوحة الأستاذ بنفس الشكل) ----------------
+// x: { t, def, no, src, fields, words, status, extra, note, noteHidden, grade, max, gradeHidden }
+function pfItem(t, who, flds) {
+  const def = A[t], no = noOf(who, t), src = srcOf(t, no);
+  const fields = Object.fromEntries(def.fields.map(f => [f.id, (flds && flds[f.id]) || ""]));
+  return { t, def, no, src, fields, words: def.fields.reduce((n, f) => n + countWords(fields[f.id]), 0) };
+}
+const hiddenTag = h0 => (h0 ? " (غير ظاهرة للطالب)" : "");
+function printFile(who, items, endLine) {
+  const now = Date.now();
+  const graded = items.filter(x => x.grade != null);
+  const gradeTxt = x => `${numTxt(x.grade)} من ${numTxt(x.max)}`;
+  const sumRows = items.map(x => h("tr", null,
+    h("td", { text: `${x.def.order}: ${x.def.title}` }), h("td", { text: x.src ? `${x.def.unit} رقم (${x.no})` : "—" }), h("td", { text: x.status }),
+    graded.length ? h("td", { class: "g", text: x.grade != null ? gradeTxt(x) + hiddenTag(x.gradeHidden) : "—" }) : null));
+  if (graded.length > 1) sumRows.push(h("tr", { class: "tot" }, h("td", { colspan: "3", text: "المجموع" }),
+    h("td", { class: "g", text: `${numTxt(graded.reduce((a, x) => a + Number(x.grade), 0))} من ${numTxt(graded.reduce((a, x) => a + Number(x.max), 0))}` })));
+  const section = x => h("section", { class: "pf-sec" },
+    h("h2", { text: `${x.def.order}: ${x.def.title}` }),
+    x.src ? h("p", { class: "pf-ref", text: `${x.def.unit} رقم (${x.no}): ${x.src.t}` }) : null,
+    h("p", { class: "pf-st", text: `الحالة: ${x.status}${x.words ? ` — ${x.words} كلمة` : ""}${x.extra || ""}` }),
+    x.note || x.grade != null ? h("div", { class: "fbk" }, h("h3", { text: x.note ? "ملاحظات الأستاذ" + hiddenTag(x.noteHidden) : "الدرجة" }),
+      x.note ? h("div", { class: "txt", text: x.note }) : null,
+      x.grade != null ? h("p", { class: "gl", text: `الدرجة: ${gradeTxt(x)}${hiddenTag(x.gradeHidden)}` }) : null) : null,
+    x.def.fields.map((f, i) => {
+      const v = String(x.fields[f.id] || "").trim();
+      return h("div", { class: "pf-f" }, h("h3", null, h("span", { class: "num", text: String(i + 1) }), f.label),
+        v ? h("div", { class: "pf-ans", text: v }) : h("p", { class: "pf-ans empty", text: "لم يُكتب في هذه الخانة شيء." }));
+    }),
+    x.src ? h("div", { class: "pf-doc" }, h("h3", { text: `ملحق ${x.def.order}` }), docFor(x.t, x.src, x.no)) : null);
+  return h("article", { class: "pf" },
+    h("header", { class: "pf-head" }, h("img", { src: LOGO, alt: "جامعة القصيم" }),
+      h("div", null, h("b", { text: DATA.course.name }), h("p", { text: `${DATA.course.section} — ${DATA.course.term}` }), h("p", { text: "أستاذ المقرر: د. عبدالله القويفلي" }))),
+    h("h1", { text: "ملف واجبات الطالب" }),
+    h("div", { class: "pf-id" },
+      h("div", null, "الطالب", h("b", { text: who.name })), h("div", null, "الرقم الجامعي", h("b", { text: String(who.uni) })),
+      h("div", null, "تاريخ الطباعة", h("b", { text: hij(now) }))),
+    h("table", { class: "pf-sum" }, h("thead", null, h("tr", null, ["الواجب", "الموضوع", "الحالة"].map(x => h("th", { text: x })), graded.length ? h("th", { text: "الدرجة" }) : null)),
+      h("tbody", null, sumRows)),
+    items.map(section),
+    h("p", { class: "pf-end", text: `${endLine} من منصة واجبات مقرر ${DATA.course.name}، طُبعت ${whenLong(now)}.` }));
+}
+// The toolbar above the file: back, print, what to print, attach the ruling/case. make(scope) rebuilds the file.
+function printScreen({ back, make, title, docsKey, scope }) {
+  const holder = h("div");
+  const docsChk = h("input", { type: "checkbox", id: "pf-docs", checked: readLS(docsKey) !== false });
+  let cur = scope ? scope.value : null;
+  const render = () => { const file = make(cur); for (const d of file.querySelectorAll(".pf-doc")) d.hidden = !docsChk.checked; holder.replaceChildren(file); };
+  docsChk.addEventListener("change", () => { writeLS(docsKey, docsChk.checked); render(); });
+  const scopeEl = scope ? h("fieldset", { class: "pscope" }, h("legend", { text: "ما يُطبع:" }),
+    scope.options.map(([v, label]) => {
+      const inp = h("input", { type: "radio", name: "pf-scope", id: "pf-s-" + v, value: v, checked: v === cur });
+      inp.addEventListener("change", () => { if (inp.checked) { cur = v; render(); } });
+      return h("label", { class: "chk", for: "pf-s-" + v }, inp, label);
+    })) : null;
+  const doPrint = () => {
+    const old = document.title; document.title = title;
+    window.addEventListener("afterprint", () => { document.title = old; }, { once: true });
+    window.print();
+  };
+  render();
+  return h("div", null,
+    h("div", { class: "pbar" }, back, h("button", { class: "btn primary", type: "button", text: "طباعة أو حفظ PDF", onclick: doPrint }),
+      scopeEl, h("label", { class: "chk", for: "pf-docs" }, docsChk, "إرفاق نص الحكم ووقائع الاستشارة"),
+      h("p", { class: "tip", text: "في الحاسب: اختر «حفظ بتنسيق PDF» من قائمة الطابعة، ولإخفاء رابط الصفحة من هوامش الورق ألغِ خيار «الرؤوس والتذييلات». وفي الجوال: اختر الطباعة، ثم احفظ الملف أو شاركه." })),
+    holder);
+}
+
+// الطالب: يرى ملفه هو فقط، وما أظهره له الأستاذ من ملاحظات ودرجات
 async function renderPrint() {
   setWho("student");
   view.replaceChildren(loading("جارٍ تجهيز ملف واجباتك…"));
@@ -748,62 +821,53 @@ async function renderPrint() {
     subs = { com: a, con: b }; pubs = { com: pa, con: pb };
   } catch (e) { view.replaceChildren(errorPanel(errText(e), route)); return; }
   if (location.hash !== "#/print") return;
-  const now = Date.now();
   const items = TYPES.map(t => {
-    const def = A[t], no = noOf(session, t), src = srcOf(t, no), s = subs[t], pb = pubs[t];
-    const fields = Object.fromEntries(def.fields.map(f => [f.id, (s && s.fields && s.fields[f.id]) || ""]));
-    const l = readLS(LSK(`${session.K}_${t}`)), done = !!(s && s.status === "submitted");
+    const s = subs[t], pb = pubs[t] || {}, done = !!(s && s.status === "submitted");
+    const l = readLS(LSK(`${session.K}_${t}`));
     const localNewer = !done && !!(l && l.dirty && (l.rev || 0) >= ((s && s.saves) || 0));
-    if (localNewer) for (const f of def.fields) if (typeof (l.fields || {})[f.id] === "string") fields[f.id] = l.fields[f.id];
-    const words = def.fields.reduce((n, f) => n + countWords(fields[f.id]), 0);
+    const flds = { ...((s && s.fields) || {}) };
+    if (localNewer) for (const f of A[t].fields) if (typeof (l.fields || {})[f.id] === "string") flds[f.id] = l.fields[f.id];
+    const x = pfItem(t, session, flds);
     const rev = revOpen(pb) && !done;
-    const status = done ? `سُلّم ${when(s.submittedAt)}` : rev ? `مفتوح للتعديل حتى ${when(pb.reviseUntil)}` : words ? "مسودة لم تُسلّم بعد" : "لم يبدأ";
-    return { t, def, no, src, fields, words, status, localNewer, pb: pb || {} };
+    x.status = done ? `سُلّم ${when(s.submittedAt)}` : rev ? `مفتوح للتعديل حتى ${when(pb.reviseUntil)}` : x.words ? "مسودة لم تُسلّم بعد" : "لم يبدأ";
+    x.extra = localNewer ? " — تشمل تعديلات محفوظة على هذا الجهاز لم تُرفع إلى المنصة بعد" : "";
+    x.note = pb.note || null; x.grade = pb.grade != null ? pb.grade : null; x.max = pb.max;
+    return x;
   });
-  const graded = items.filter(x => x.pb.grade != null);
-  const sumRows = items.map(x => h("tr", null,
-    h("td", { text: `${x.def.order}: ${x.def.title}` }), h("td", { text: x.src ? `${x.def.unit} رقم (${x.no})` : "—" }), h("td", { text: x.status }),
-    graded.length ? h("td", { class: "g", text: x.pb.grade != null ? `${numTxt(x.pb.grade)} من ${numTxt(x.pb.max)}` : "—" }) : null));
-  if (graded.length > 1) sumRows.push(h("tr", { class: "tot" }, h("td", { colspan: "3", text: "المجموع" }),
-    h("td", { class: "g", text: `${numTxt(graded.reduce((a, x) => a + Number(x.pb.grade), 0))} من ${numTxt(graded.reduce((a, x) => a + Number(x.pb.max), 0))}` })));
-  const section = x => h("section", { class: "pf-sec" },
-    h("h2", { text: `${x.def.order}: ${x.def.title}` }),
-    x.src ? h("p", { class: "pf-ref", text: `${x.def.unit} رقم (${x.no}): ${x.src.t}` }) : null,
-    h("p", { class: "pf-st", text: `الحالة: ${x.status}${x.words ? ` — ${x.words} كلمة` : ""}${x.localNewer ? " — تشمل تعديلات محفوظة على هذا الجهاز لم تُرفع إلى المنصة بعد" : ""}` }),
-    x.pb.note || x.pb.grade != null ? h("div", { class: "fbk" }, h("h3", { text: x.pb.note ? "ملاحظات الأستاذ" : "الدرجة" }),
-      x.pb.note ? h("div", { class: "txt", text: x.pb.note }) : null,
-      x.pb.grade != null ? h("p", { class: "gl", text: `الدرجة: ${numTxt(x.pb.grade)} من ${numTxt(x.pb.max)}` }) : null) : null,
-    x.def.fields.map((f, i) => {
-      const v = String(x.fields[f.id] || "").trim();
-      return h("div", { class: "pf-f" }, h("h3", null, h("span", { class: "num", text: String(i + 1) }), f.label),
-        v ? h("div", { class: "pf-ans", text: v }) : h("p", { class: "pf-ans empty", text: "لم يُكتب في هذه الخانة شيء." }));
-    }),
-    x.src ? h("div", { class: "pf-doc" }, h("h3", { text: `ملحق ${x.def.order}` }), docFor(x.t, x.src, x.no)) : null);
-  const docsChk = h("input", { type: "checkbox", id: "pf-docs", checked: readLS("law483:print-docs") !== false });
-  const file = h("article", { class: "pf" },
-    h("header", { class: "pf-head" }, h("img", { src: LOGO, alt: "جامعة القصيم" }),
-      h("div", null, h("b", { text: DATA.course.name }), h("p", { text: `${DATA.course.section} — ${DATA.course.term}` }), h("p", { text: "أستاذ المقرر: د. عبدالله القويفلي" }))),
-    h("h1", { text: "ملف واجبات الطالب" }),
-    h("div", { class: "pf-id" },
-      h("div", null, "الطالب", h("b", { text: session.name })), h("div", null, "الرقم الجامعي", h("b", { text: String(session.uni) })),
-      h("div", null, "تاريخ الطباعة", h("b", { text: hij(now) }))),
-    h("table", { class: "pf-sum" }, h("thead", null, h("tr", null, ["الواجب", "الموضوع", "الحالة"].map(x => h("th", { text: x })), graded.length ? h("th", { text: "الدرجة" }) : null)),
-      h("tbody", null, sumRows)),
-    items.map(section),
-    h("p", { class: "pf-end", text: `نسخة الطالب من منصة واجبات مقرر ${DATA.course.name}، طُبعت ${whenLong(now)}.` }));
-  const showDocs = () => { for (const d of file.querySelectorAll(".pf-doc")) d.hidden = !docsChk.checked; };
-  docsChk.addEventListener("change", () => { writeLS("law483:print-docs", docsChk.checked); showDocs(); });
-  showDocs();
-  view.replaceChildren(
-    h("div", { class: "pbar" },
-      h("a", { class: "btn", href: "#/", text: "رجوع إلى الواجبات" }),
-      h("button", { class: "btn primary", type: "button", text: "طباعة أو حفظ PDF", onclick: () => window.print() }),
-      h("label", { class: "chk", for: "pf-docs" }, docsChk, "إرفاق نص الحكم ووقائع الاستشارة"),
-      h("p", { class: "tip", text: "في الحاسب: اختر «حفظ بتنسيق PDF» من قائمة الطابعة، ولإخفاء رابط الصفحة من هوامش الورق ألغِ خيار «الرؤوس والتذييلات». وفي الجوال: اختر الطباعة، ثم احفظ الملف أو شاركه." })),
-    file);
+  view.replaceChildren(printScreen({
+    back: h("a", { class: "btn", href: "#/", text: "رجوع إلى الواجبات" }),
+    make: () => printFile(session, items, "نسخة الطالب"),
+    title: `واجبات ${session.name} — 483 نظم`, docsKey: "law483:print-docs",
+  }));
   const title = document.title;
   document.title = `واجبات ${session.name} — 483 نظم`;
   cleanup = () => { document.title = title; };
+}
+
+// الأستاذ: ملف أي طالب بنفس الشكل، الواجبان معاً أو أحدهما، مع الملاحظات والدرجة ولو كانت مخفية عن الطالب
+function adminPrintItem(AD, r, t) {
+  const id = `${r.K}_${t}`, s = AD.subs.get(id), f = AD.fb && AD.fb.get(id), fb = fbOf(AD, id), st = subState(s, f);
+  const useOrig = st === "revexpired" && fb.orig;
+  const x = pfItem(t, r, useOrig ? fb.orig.fields : s && s.fields);
+  x.status = !s ? "لم يبدأ"
+    : st === "done" ? `سُلّم ${when(s.submittedAt)}`
+    : st === "resubmitted" ? `سُلّم بعد التعديل ${when(s.submittedAt)}`
+    : st === "revising" ? `في التعديل حتى ${when(fb.reviseUntil)} (لم يسلّم تعديله بعد)`
+    : st === "revexpired" ? `سُلّم ${when(fb.orig && fb.orig.submittedAt)}، وانتهت مهلة التعديل دون إعادة تسليم`
+    : `مسودة لم تُسلّم — آخر حفظ ${when(s.updatedAt)}`;
+  const ps = useOrig ? fb.orig : s;
+  x.extra = ps && ps.paste && ps.paste.count ? ` — لصق ${ps.paste.count} مرة (${pastePct(t, ps)}% من النص)` : "";
+  x.note = fb.note.trim() || null; x.noteHidden = !!x.note && !fb.noteVisible;
+  x.grade = fb.grade; x.max = fb.max; x.gradeHidden = fb.grade != null && !fb.gradeVisible;
+  return x;
+}
+function adminPrint(AD, ctx, r, t) {
+  return printScreen({
+    back: h("button", { class: "btn", type: "button", text: "رجوع إلى إجابة الطالب", onclick: () => ctx.mount(viewer(AD, ctx, r, t)) }),
+    make: sc => printFile(r, (sc === "both" ? TYPES : [sc]).map(k => adminPrintItem(AD, r, k)), "نسخة الأستاذ"),
+    title: `واجبات ${r.name} — 483 نظم`, docsKey: "law483:admin-print-docs",
+    scope: { value: t, options: [["both", "الواجبان معاً في ملف واحد"], ["com", `${A.com.order} فقط (${A.com.work})`], ["con", `${A.con.order} فقط (${A.con.work})`]] },
+  });
 }
 
 function rulingDoc(r, no) {
@@ -1332,7 +1396,8 @@ function viewer(AD, ctx, r, t) {
     h("p", { class: "muted small", text: `الرقم الجامعي ${r.uni} — ${def.unit} رقم (${no}): ${src ? src.t : ""}` }));
   const f = AD.fb && AD.fb.get(id), x = subState(s, f);
   if (!s) {
-    head.append(h("p", { text: "لم يبدأ الطالب هذا الواجب بعد." }));
+    head.append(h("p", { text: "لم يبدأ الطالب هذا الواجب بعد." }),
+      h("div", { class: "row-actions no-print" }, h("button", { class: "btn small", text: "طباعة", onclick: () => ctx.mount(adminPrint(AD, ctx, r, t)) })));
     return h("div", null, head, feedbackPanel(AD, ctx, r, t, s), src ? docFor(t, src, no) : null);
   }
   head.append(h("div", { class: "kv" },
@@ -1349,7 +1414,7 @@ function viewer(AD, ctx, r, t) {
   }));
   acts.append(
     h("button", { class: "btn small", text: "نسخ الإجابة", onclick: () => navigator.clipboard.writeText(`${r.name} — ${def.title} (${def.unit} ${no})\n\n${answerText(t, s)}`).then(() => toast("نُسخت الإجابة")) }),
-    h("button", { class: "btn small", text: "طباعة", onclick: () => window.print() }));
+    h("button", { class: "btn small", text: "طباعة", onclick: () => ctx.mount(adminPrint(AD, ctx, r, t)) }));
   head.append(acts);
   const ansList = flds => def.fields.map((fd, i) => {
     const txt = ((flds && flds[fd.id]) || "").trim();
